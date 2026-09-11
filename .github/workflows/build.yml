@@ -14,12 +14,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Unzip project
+      - name: Unzip new project
         run: |
-          unzip -o DustinBotV1_READY_GitHub.zip -d project
+          unzip -o DustinBotV1_UI_READY_GitHub.zip -d project
 
       - name: Fix Kotlin duplicate dependencies
-        working-directory: project/DustinBotV1_READY_GitHub
+        working-directory: project/DustinBotV1_UI_READY_GitHub
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -50,11 +50,11 @@ jobs:
           gradle-version: '8.7'
 
       - name: Build APK
-        working-directory: project/DustinBotV1_READY_GitHub
+        working-directory: project/DustinBotV1_UI_READY_GitHub
         run: gradle :app:assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DustinBotV1-debug-apk
-          path: project/DustinBotV1_READY_GitHub/app/build/outputs/apk/debug/app-debug.apk
+          name: DustinBotV1-UI-debug-apk
+          path: project/DustinBotV1_UI_READY_GitHub/app/build/outputs/apk/debug/app-debug.apk
