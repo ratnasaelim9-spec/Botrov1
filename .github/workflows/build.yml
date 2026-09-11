@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -18,38 +19,57 @@ jobs:
         run: |
           mkdir -p project
           unzip -o DustinBotV1_UI_READY_GitHub.zip -d project
-          echo "=== Extracted files ==="
-          find project -maxdepth 4 -type f | head -100
+
+          echo "=== Files after unzip ==="
+          find project -maxdepth 5 -type f | head -100
 
       - name: Find Android project
         run: |
           PROJECT_DIR=$(dirname "$(find project -name settings.gradle -type f | head -1)")
-          echo "PROJECT_DIR=$PROJECT_DIR"
-          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+
+          echo "Found Android project:"
+          echo "$PROJECT_DIR"
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERROR: Android project not found"
+            exit 1
+          fi
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
       - name: Fix Kotlin duplicate dependencies
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
+          echo "Using project:"
+          echo "$PROJECT_DIR"
 
-          p = Path("${PROJECT_DIR}") / "app" / "build.gradle"
+          BUILD_FILE="$PROJECT_DIR/app/build.gradle"
 
-          if p.exists():
-              s = p.read_text()
+          if [ ! -f "$BUILD_FILE" ]; then
+            echo "ERROR: build.gradle not found:"
+            echo "$BUILD_FILE"
+            exit 1
+          fi
 
-              s += """
-          
-          configurations.all {
-              exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'
-              exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8'
+          echo "Fixing Kotlin dependencies in:"
+          echo "$BUILD_FILE"
+
+          cat >> "$BUILD_FILE" <<'EOF'
+
+          configurations.configureEach {
+              resolutionStrategy.eachDependency {
+                  if (requested.group == "org.jetbrains.kotlin") {
+                      useVersion "1.8.22"
+                  }
+              }
+
+              exclude group: "org.jetbrains.kotlin", module: "kotlin-stdlib-jdk7"
+              exclude group: "org.jetbrains.kotlin", module: "kotlin-stdlib-jdk8"
           }
-          """
 
-              p.write_text(s)
-              print("Kotlin duplicate dependency fix applied.")
-          else:
-              print("build.gradle not found:", p)
-          PY
+          EOF
+
+          echo "=== Final build.gradle ==="
+          cat "$BUILD_FILE"
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -64,11 +84,21 @@ jobs:
 
       - name: Build APK
         run: |
+          echo "Building from:"
+          echo "$PROJECT_DIR"
+
           cd "$PROJECT_DIR"
-          gradle :app:assembleDebug
+
+          gradle :app:assembleDebug --stacktrace
+
+      - name: Check APK
+        run: |
+          echo "=== APK files ==="
+          find "$PROJECT_DIR/app/build/outputs/apk" -type f -print
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: DustinBotV1-debug-apk
           path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
