@@ -14,28 +14,41 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Unzip new project
+      - name: Unzip project
         run: |
+          mkdir -p project
           unzip -o DustinBotV1_UI_READY_GitHub.zip -d project
+          echo "=== Extracted files ==="
+          find project -maxdepth 4 -type f | head -100
+
+      - name: Find Android project
+        run: |
+          PROJECT_DIR=$(dirname "$(find project -name settings.gradle -type f | head -1)")
+          echo "PROJECT_DIR=$PROJECT_DIR"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
 
       - name: Fix Kotlin duplicate dependencies
-        working-directory: project/DustinBotV1_UI_READY_GitHub
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
-          p = Path("app/build.gradle")
-          s = p.read_text()
+          p = Path("${PROJECT_DIR}") / "app" / "build.gradle"
 
-          s += """
+          if p.exists():
+              s = p.read_text()
 
+              s += """
+          
           configurations.all {
               exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'
               exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8'
           }
           """
 
-          p.write_text(s)
+              p.write_text(s)
+              print("Kotlin duplicate dependency fix applied.")
+          else:
+              print("build.gradle not found:", p)
           PY
 
       - name: Setup Java
@@ -50,11 +63,12 @@ jobs:
           gradle-version: '8.7'
 
       - name: Build APK
-        working-directory: project/DustinBotV1_UI_READY_GitHub
-        run: gradle :app:assembleDebug
+        run: |
+          cd "$PROJECT_DIR"
+          gradle :app:assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DustinBotV1-UI-debug-apk
-          path: project/DustinBotV1_UI_READY_GitHub/app/build/outputs/apk/debug/app-debug.apk
+          name: DustinBotV1-debug-apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
