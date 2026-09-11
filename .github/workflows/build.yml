@@ -17,7 +17,26 @@ jobs:
       - name: Unzip project
         run: |
           unzip -o DustinBotV1_READY_GitHub.zip -d project
-          find project -maxdepth 3 -type f | head -100
+
+      - name: Fix Kotlin duplicate dependencies
+        working-directory: project/DustinBotV1_READY_GitHub
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("app/build.gradle")
+          s = p.read_text()
+
+          s += """
+
+          configurations.all {
+              exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'
+              exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8'
+          }
+          """
+
+          p.write_text(s)
+          PY
 
       - name: Setup Java
         uses: actions/setup-java@v4
