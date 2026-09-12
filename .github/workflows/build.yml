@@ -14,30 +14,62 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Check ZIP
+        run: |
+          ls -lah
+          test -f DustinBotV2_NEW.zip
+
+      - name: Extract V2
+        run: |
+          rm -rf /tmp/dustinbot
+          mkdir -p /tmp/dustinbot
+          unzip -q DustinBotV2_NEW.zip -d /tmp/dustinbot
+
+          echo "=== Extracted files ==="
+          find /tmp/dustinbot -maxdepth 4 -type f | head -100
+
+      - name: Find Android project
+        run: |
+          PROJECT_DIR=$(find /tmp/dustinbot -type f -name "settings.gradle" -print -quit | xargs -r dirname)
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERROR: settings.gradle not found"
+            exit 1
+          fi
+
+          echo "PROJECT_DIR=$PROJECT_DIR"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Gradle
+      - name: Setup Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Extract DustinBot V2
+      - name: Verify Android project
         run: |
-          mkdir -p /tmp/dustin
-          unzip -o DustinBotV2_NEW.zip -d /tmp/dustin
-          PROJECT_DIR=$(find /tmp/dustin -name settings.gradle -o -name settings.gradle.kts | head -1 | xargs dirname)
-          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+          test -f "$PROJECT_DIR/settings.gradle"
+          test -f "$PROJECT_DIR/build.gradle"
+          test -f "$PROJECT_DIR/app/build.gradle"
+          echo "Android project OK"
 
-      - name: Build APK
+      - name: Build Debug APK
         run: |
-          gradle -p "$PROJECT_DIR" :app:assembleDebug --no-daemon
+          cd "$PROJECT_DIR"
+          gradle :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Find APK
+        run: |
+          find "$PROJECT_DIR/app/build/outputs" -type f -name "*.apk" -print
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: DustinBotV2-FULL-APK
           path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
