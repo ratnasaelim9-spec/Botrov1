@@ -1,4 +1,4 @@
-name: Build APK
+name: Build Dustin Bot APK
 
 on:
   workflow_dispatch:
@@ -25,105 +25,19 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Find project ZIP
-        shell: bash
+      - name: Extract DustinBot V2
         run: |
-          set -e
-
-          ZIP_FILE=$(find . -maxdepth 1 -type f -name 'DustinBotV1_5_READY_GitHub.zip' | head -n 1)
-
-          if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: DustinBotV1_5_READY_GitHub.zip not found"
-            echo "Files:"
-            ls -la
-            exit 1
-          fi
-
-          echo "Found: $ZIP_FILE"
-          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
-
-      - name: Extract project
-        shell: bash
-        run: |
-          set -e
-
-          rm -rf project
-          mkdir project
-
-          unzip -q "$ZIP_FILE" -d project
-
-          echo "Project files:"
-          find project -maxdepth 5 -type f | head -100
-
-      - name: Find Gradle project
-        shell: bash
-        run: |
-          set -e
-
-          SETTINGS=$(find project \
-            \( -name settings.gradle -o -name settings.gradle.kts \) \
-            | head -n 1)
-
-          if [ -z "$SETTINGS" ]; then
-            echo "ERROR: settings.gradle not found"
-            find project -type f | head -100
-            exit 1
-          fi
-
-          PROJECT_DIR=$(dirname "$SETTINGS")
-
-          echo "PROJECT_DIR=$PROJECT_DIR"
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-      - name: Create Kotlin compatibility fix
-        shell: bash
-        run: |
-          cat > "$RUNNER_TEMP/fix.gradle" <<'EOF'
-          allprojects {
-              configurations.configureEach {
-                  resolutionStrategy {
-                      force 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22'
-                      force 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22'
-                      force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22'
-                  }
-              }
-          }
-          EOF
-
-          echo "fix.gradle created"
-          ls -l "$RUNNER_TEMP/fix.gradle"
+          mkdir -p /tmp/dustin
+          unzip -o DustinBotV2_NEW.zip -d /tmp/dustin
+          PROJECT_DIR=$(find /tmp/dustin -name settings.gradle -o -name settings.gradle.kts | head -1 | xargs dirname)
+          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
 
       - name: Build APK
-        shell: bash
         run: |
-          set -e
-
-          gradle \
-            -p "$PROJECT_DIR" \
-            -I "$RUNNER_TEMP/fix.gradle" \
-            :app:assembleDebug \
-            --no-daemon \
-            --stacktrace
-
-      - name: Prepare APK
-        shell: bash
-        run: |
-          set -e
-
-          APK=$(find "$PROJECT_DIR/app/build/outputs/apk" \
-            -type f \
-            -name '*.apk' | head -n 1)
-
-          if [ -z "$APK" ]; then
-            echo "ERROR: APK not found"
-            exit 1
-          fi
-
-          cp "$APK" "$GITHUB_WORKSPACE/DustinBotV1.5-debug.apk"
+          gradle -p "$PROJECT_DIR" :app:assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DustinBotV1.5-APK
-          path: DustinBotV1.5-debug.apk
-          if-no-files-found: error
+          name: DustinBotV2-FULL-APK
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
