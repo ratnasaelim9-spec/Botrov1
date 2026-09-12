@@ -25,19 +25,16 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Find V1.4 ZIP
+      - name: Find project ZIP
         shell: bash
         run: |
           set -e
 
-          ZIP_FILE=$(find . -maxdepth 1 -type f \
-            \( -name 'DustinBotV1_4_READY_*.zip' \
-            -o -name 'DustinBotV1_4_READY*.zip' \
-            \) | head -n 1)
+          ZIP_FILE=$(find . -maxdepth 1 -type f -name 'DustinBotV1_5_READY_GitHub.zip' | head -n 1)
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: V1.4 ZIP not found"
-            echo "Files in repository:"
+            echo "ERROR: DustinBotV1_5_READY_GitHub.zip not found"
+            echo "Files:"
             ls -la
             exit 1
           fi
@@ -45,37 +42,37 @@ jobs:
           echo "Found: $ZIP_FILE"
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
-      - name: Extract Project
+      - name: Extract project
         shell: bash
         run: |
           set -e
 
           rm -rf project
-          mkdir -p project
+          mkdir project
 
           unzip -q "$ZIP_FILE" -d project
 
-          echo "Extracted files:"
-          find project -maxdepth 4 -type f | head -100
+          echo "Project files:"
+          find project -maxdepth 5 -type f | head -100
 
-      - name: Find Gradle Project
+      - name: Find Gradle project
         shell: bash
         run: |
           set -e
 
-          SETTINGS=$(find project -name settings.gradle -o -name settings.gradle.kts | head -n 1)
+          SETTINGS=$(find project \
+            \( -name settings.gradle -o -name settings.gradle.kts \) \
+            | head -n 1)
 
           if [ -z "$SETTINGS" ]; then
             echo "ERROR: settings.gradle not found"
-            find project -maxdepth 5 -type f
+            find project -type f | head -100
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
-          echo "Gradle project:"
-          echo "$PROJECT_DIR"
-
+          echo "PROJECT_DIR=$PROJECT_DIR"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
       - name: Create Kotlin compatibility fix
@@ -93,16 +90,13 @@ jobs:
           }
           EOF
 
-          echo "Created:"
+          echo "fix.gradle created"
           ls -l "$RUNNER_TEMP/fix.gradle"
 
       - name: Build APK
         shell: bash
         run: |
           set -e
-
-          echo "Building project:"
-          echo "$PROJECT_DIR"
 
           gradle \
             -p "$PROJECT_DIR" \
@@ -111,7 +105,7 @@ jobs:
             --no-daemon \
             --stacktrace
 
-      - name: Find APK
+      - name: Prepare APK
         shell: bash
         run: |
           set -e
@@ -122,18 +116,14 @@ jobs:
 
           if [ -z "$APK" ]; then
             echo "ERROR: APK not found"
-            find "$PROJECT_DIR/app/build" -type f | head -100
             exit 1
           fi
 
-          echo "APK found:"
-          echo "$APK"
-
-          cp "$APK" "$GITHUB_WORKSPACE/DustinBotV1.4-debug.apk"
+          cp "$APK" "$GITHUB_WORKSPACE/DustinBotV1.5-debug.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DustinBotV1.4-APK
-          path: DustinBotV1.4-debug.apk
+          name: DustinBotV1.5-APK
+          path: DustinBotV1.5-debug.apk
           if-no-files-found: error
