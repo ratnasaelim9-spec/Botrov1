@@ -1,75 +1,311 @@
-name: Build APK
+package com.dustinbot.v1;
 
-on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
+import android.app.Activity;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.Service;
+import android.content.Intent;
+import android.graphics.PixelFormat;
+import android.hardware.display.DisplayManager;
+import android.hardware.display.VirtualDisplay;
+import android.media.Image;
+import android.media.ImageReader;
+import android.media.projection.MediaProjection;
+import android.media.projection.MediaProjectionManager;
+import android.os.Build;
+import android.os.Handler;
+import android.os.IBinder;
+import android.os.Looper;
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
+import java.nio.ByteBuffer;
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+public class ScreenCaptureService extends Service {
 
-      - name: Check ZIP
-        run: |
-          echo "Files in repository:"
-          ls -lah
-          
-          if [ ! -f "DustinBotV1_V1_2.zip" ]; then
-            echo "ERROR: DustinBotV1_V1_2.zip not found"
-            exit 1
-          fi
+    public static final String EXTRA_RESULT_CODE = "result_code";
+    public static final String EXTRA_DATA = "result_data";
 
-          echo "Using: DustinBotV1_V1_2.zip"
+    private MediaProjection projection;
+    private VirtualDisplay display;
+    private ImageReader reader;
 
-      - name: Unzip project
-        run: |
-          rm -rf project
-          mkdir -p project
-          unzip -o "DustinBotV1_V1_2.zip" -d project
+    private final Handler handler =
+            new Handler(Looper.getMainLooper());
 
-          echo "=== Extracted files ==="
-          find project -maxdepth 5 -type f | sort
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
 
-      - name: Find Android project
-        run: |
-          PROJECT_DIR=$(find project -name settings.gradle -type f -print -quit | xargs -r dirname)
+        createNotification();
 
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "ERROR: settings.gradle not found"
-            exit 1
-          fi
+        if (intent != null && intent.hasExtra(EXTRA_DATA)) {
 
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Android project: $PROJECT_DIR"
+            int resultCode = intent.getIntExtra(
+                    EXTRA_RESULT_CODE,
+                    Activity.RESULT_CANCELED
+            );
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
+            Intent data;
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.7'
+            if (Build.VERSION.SDK_INT >= 33) {
+                data = intent.getParcelableExtra(
+                        EXTRA_DATA,
+                        Intent.class
+                );
+            } else {
+                data = intent.getParcelableExtra(EXTRA_DATA);
+            }
 
-      - name: Build APK
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          gradle :app:assembleDebug --no-daemon --stacktrace
+            if (resultCode == Activity.RESULT_OK && data != null) {
+                startCapture(resultCode, data);
+            }
+        }
 
-      - name: Show APK
-        run: |
-          find "${PROJECT_DIR}/app/build/outputs/apk" -type f -print
+        return START_NOT_STICKY;
+    }
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: DustinBotV1-APK-V1.2
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
+    private void createNotification() {
+
+        String channelId = "dustin_capture";
+
+        NotificationManager nm =
+                (NotificationManager)
+                        getSystemService(NOTIFICATION_SERVICE);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+
+            NotificationChannel channel =
+                    new NotificationChannel(
+                            channelId,
+                            "Dustin Bot",
+                            NotificationManager.IMPORTANCE_LOW
+                    );
+
+            channel.setDescription(
+                    "Dustin Bot screen capture"
+            );
+
+            nm.createNotificationChannel(channel);
+        }
+
+        Notification.Builder builder;
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            builder = new Notification.Builder(
+                    this,
+                    channelId
+            );
+        } else {
+            builder = new Notification.Builder(this);
+        }
+
+        Notification notification = builder
+                .setContentTitle("Dustin Bot")
+                .setContentText("กำลังตรวจภาพหน้าจอ")
+                .setSmallIcon(android.R.drawable.ic_menu_view)
+                .setOngoing(true)
+                .build();
+
+        startForeground(901, notification);
+    }
+
+    private void startCapture(
+            int resultCode,
+            Intent data
+    ) {
+
+        MediaProjectionManager manager =
+                (MediaProjectionManager)
+                        getSystemService(
+                                MEDIA_PROJECTION_SERVICE
+                        );
+
+        if (manager == null) {
+            return;
+        }
+
+        projection =
+                manager.getMediaProjection(
+                        resultCode,
+                        data
+                );
+
+        if (projection == null) {
+            return;
+        }
+
+        int width =
+                getResources()
+                        .getDisplayMetrics()
+                        .widthPixels;
+
+        int height =
+                getResources()
+                        .getDisplayMetrics()
+                        .heightPixels;
+
+        int dpi =
+                getResources()
+                        .getDisplayMetrics()
+                        .densityDpi;
+
+        reader = ImageReader.newInstance(
+                width,
+                height,
+                PixelFormat.RGBA_8888,
+                2
+        );
+
+        reader.setOnImageAvailableListener(
+                r -> {
+
+                    Image image =
+                            r.acquireLatestImage();
+
+                    analyze(image);
+
+                },
+                handler
+        );
+
+        display =
+                projection.createVirtualDisplay(
+                        "DustinBotCapture",
+                        width,
+                        height,
+                        dpi,
+                        DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                        reader.getSurface(),
+                        null,
+                        handler
+                );
+    }
+
+    private void analyze(Image image) {
+
+        if (image == null) {
+            return;
+        }
+
+        try {
+
+            Image.Plane plane =
+                    image.getPlanes()[0];
+
+            ByteBuffer buffer =
+                    plane.getBuffer();
+
+            int pixelStride =
+                    plane.getPixelStride();
+
+            int rowStride =
+                    plane.getRowStride();
+
+            int width =
+                    image.getWidth();
+
+            int height =
+                    image.getHeight();
+
+            int redHits = 0;
+            int samples = 0;
+
+            /*
+             * ตรวจบริเวณกลางหน้าจอแบบเบา ๆ
+             * เพื่อหา pixel สีแดง
+             *
+             * ขั้นนี้เป็นเพียงตัวทดสอบระบบ
+             * ยังไม่ใช่ระบบตรวจ Monster จริง
+             */
+
+            for (
+                    int y = height / 5;
+                    y < height * 4 / 5;
+                    y += 10
+            ) {
+
+                for (
+                        int x = width / 10;
+                        x < width * 9 / 10;
+                        x += 10
+                ) {
+
+                    int position =
+                            y * rowStride
+                                    + x * pixelStride;
+
+                    if (
+                            position + 3
+                                    >= buffer.capacity()
+                    ) {
+                        continue;
+                    }
+
+                    int red =
+                            buffer.get(position) & 255;
+
+                    int green =
+                            buffer.get(position + 1) & 255;
+
+                    int blue =
+                            buffer.get(position + 2) & 255;
+
+                    if (
+                            red > 180
+                                    && red > green * 1.4
+                                    && red > blue * 1.4
+                    ) {
+
+                        redHits++;
+                    }
+
+                    samples++;
+                }
+            }
+
+            if (
+                    redHits >
+                            Math.max(
+                                    15,
+                                    samples / 220
+                            )
+            ) {
+
+                BotController.onTargetSignal();
+            }
+
+        } catch (Exception ignored) {
+
+            // ป้องกันระบบล่มจากภาพที่อ่านไม่ได้
+
+        } finally {
+
+            image.close();
+        }
+    }
+
+    @Override
+    public void onDestroy() {
+
+        if (display != null) {
+            display.release();
+            display = null;
+        }
+
+        if (reader != null) {
+            reader.close();
+            reader = null;
+        }
+
+        if (projection != null) {
+            projection.stop();
+            projection = null;
+        }
+
+        super.onDestroy();
+    }
+
+    @Override
+    public IBinder onBind(Intent intent) {
+        return null;
+    }
+}
