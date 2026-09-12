@@ -30,8 +30,21 @@ jobs:
           echo "ใช้ไฟล์: $ZIP"
           unzip -q "$ZIP" -d project
 
-          echo "ตรวจสอบโครงสร้าง:"
-          find project -maxdepth 3 -type f | head -100
+          echo "ค้นหา Gradle project..."
+          SETTINGS=$(find project -type f -name "settings.gradle" -print -quit)
+
+          if [ -z "$SETTINGS" ]; then
+            echo "ไม่พบ settings.gradle"
+            find project -maxdepth 5 -type f
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$SETTINGS")
+
+          echo "PROJECT_DIR=$PROJECT_DIR"
+          find "$PROJECT_DIR" -maxdepth 3 -type f
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
       - name: Setup JDK
         uses: actions/setup-java@v4
@@ -41,15 +54,15 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
 
       - name: Build APK
-        working-directory: project
         run: |
-          chmod +x gradlew || true
-          gradle :app:assembleDebug --no-daemon --stacktrace
+          gradle -p "$PROJECT_DIR" :app:assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: DustinBotV1-APK
-          path: project/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
