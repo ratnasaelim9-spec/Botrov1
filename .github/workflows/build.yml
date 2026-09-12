@@ -15,16 +15,19 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Find and unzip project
+        shell: bash
         run: |
           rm -rf project
           mkdir -p project
 
-          ZIP_FILE=$(find . -maxdepth 1 -type f -name "DustinBotV1_UI_FIX.zip" | head -1)
+          ZIP_FILE=$(find . -maxdepth 1 -type f -name '*.zip' | head -n 1)
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: DustinBotV1_UI_FIX.zip not found"
+            echo "ERROR: ZIP project not found"
             exit 1
           fi
+
+          echo "Using ZIP: $ZIP_FILE"
 
           unzip -o "$ZIP_FILE" -d project
 
@@ -32,11 +35,14 @@ jobs:
           find project -maxdepth 4 -type f | sort
 
       - name: Find Android project
+        shell: bash
         run: |
-          PROJECT_DIR=$(find project -name settings.gradle -type f | head -1 | xargs dirname)
+          PROJECT_DIR=$(find project -name settings.gradle -type f -print -quit | xargs -r dirname)
 
           if [ -z "$PROJECT_DIR" ]; then
             echo "ERROR: settings.gradle not found"
+            echo "=== Files ==="
+            find project -maxdepth 5 -type f | sort
             exit 1
           fi
 
@@ -56,6 +62,7 @@ jobs:
 
       - name: Fix Kotlin duplicate dependencies
         working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
         run: |
           cat >> build.gradle <<'EOF'
 
@@ -63,21 +70,42 @@ jobs:
               configurations.configureEach {
                   exclude group: "org.jetbrains.kotlin", module: "kotlin-stdlib-jdk7"
                   exclude group: "org.jetbrains.kotlin", module: "kotlin-stdlib-jdk8"
+
+                  resolutionStrategy {
+                      force "org.jetbrains.kotlin:kotlin-stdlib:1.8.22"
+                  }
               }
           }
           EOF
 
+      - name: Show Gradle files
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          echo "=== settings.gradle ==="
+          cat settings.gradle
+
+          echo "=== build.gradle ==="
+          cat build.gradle
+
+          echo "=== app/build.gradle ==="
+          cat app/build.gradle
+
       - name: Build APK
         working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
         run: |
-          gradle :app:assembleDebug --no-daemon
+          gradle :app:assembleDebug --no-daemon --stacktrace
 
       - name: Show APK
+        shell: bash
         run: |
-          find "${PROJECT_DIR}/app/build/outputs/apk" -type f -name "*.apk" -print
+          echo "=== APK files ==="
+          find "${PROJECT_DIR}/app/build/outputs/apk" -type f -name '*.apk' -print
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DustinBotV1-UI-FIX-debug-apk
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+          name: DustinBotV1-APK
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
